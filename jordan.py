@@ -11,115 +11,89 @@
 import numpy as np
 
 def sigmoid(x):
-    ''' Sigmoid like function using tanh '''
-    return np.tanh(x)
+    ''' Sigmoid activation function '''
+    return 1 / (1 + np.exp(-x))
 
-def dsigmoid(x):
-    ''' Derivative of sigmoid above '''
-    return 1.0-x**2
+def sigmoid_derivative(x):
+    ''' Derivative of the sigmoid function '''
+    return x * (1 - x)
 
-class Jordan:
-    ''' Jordan network '''
+class JordanNetwork:
+    ''' Jordan network implementation '''
 
-    def __init__(self, *args):
-        ''' Initialization of the perceptron with given sizes.  '''
+    def __init__(self, *layer_sizes):
+        ''' Initialize the Jordan network with given layer sizes '''
 
-        self.shape = args
-        n = len(args)
+        self.layer_sizes = layer_sizes
+        self.num_layers = len(layer_sizes)
 
-        # Build layers
-        self.layers = []
-        # Input layer (+1 unit for bias
-        #              +size of oputput layer)
-        self.layers.append(np.ones(self.shape[0]+1+self.shape[-1]))
-        # Hidden layer(s) + output layer
-        for i in range(1,n):
-            self.layers.append(np.ones(self.shape[i]))
-        # Build weights matrix (randomly between -0.25 and +0.25)
-        self.weights = []
-        for i in range(n-1):
-            self.weights.append(np.zeros((self.layers[i].size,
-                                         self.layers[i+1].size)))
+        # Initialize weights and biases
+        self.weights = [np.random.randn(layer_sizes[i], layer_sizes[i+1]) for i in range(self.num_layers - 1)]
+        self.biases = [np.random.randn(1, layer_sizes[i+1]) for i in range(self.num_layers - 1)]
 
-        # dw will hold last change in weights (for momentum)
-        self.dw = [0,]*len(self.weights)
+    def feedforward(self, input_data):
+        ''' Perform feedforward propagation '''
 
-        # Reset weights
-        self.reset()
+        activations = [input_data]
+        for i in range(self.num_layers - 1):
+            weighted_input = np.dot(activations[-1], self.weights[i]) + self.biases[i]
+            activations.append(sigmoid(weighted_input))
+        return activations
 
-    def reset(self):
-        ''' Reset weights '''
+    def backpropagate(self, input_data, target, learning_rate=0.1):
+        ''' Perform backpropagation '''
 
-        for i in range(len(self.weights)):
-            Z = np.random.random((self.layers[i].size,self.layers[i+1].size))
-            self.weights[i][...] = (2*Z-1)*0.25
-
-    def propagate_forward(self, data):
-        ''' Propagate data from input layer to output layer. '''
-
-        # Set input layer with data
-        self.layers[0][0:self.shape[0]] = data
-        # and output layer
-        self.layers[0][self.shape[0]:-1] = self.layers[-1]
-
-        # Propagate from layer 0 to layer n-1 using sigmoid as activation function
-        for i in range(1,len(self.shape)):
-            # Propagate activity
-            self.layers[i][...] = sigmoid(np.dot(self.layers[i-1],self.weights[i-1]))
-
-        # Return output
-        return self.layers[-1]
-
-
-    def propagate_backward(self, target, lrate=0.1, momentum=0.1):
-        ''' Back propagate error related to target using lrate. '''
-
-        deltas = []
+        activations = self.feedforward(input_data)
+        deltas = [None] * (self.num_layers - 1)
 
         # Compute error on output layer
-        error = target - self.layers[-1]
-        delta = error*dsigmoid(self.layers[-1])
-        deltas.append(delta)
+        output_error = target - activations[-1]
+        deltas[-1] = output_error * sigmoid_derivative(activations[-1])
 
-        # Compute error on hidden layers
-        for i in range(len(self.shape)-2,0,-1):
-            delta = np.dot(deltas[0],self.weights[i].T)*dsigmoid(self.layers[i])
-            deltas.insert(0,delta)
-            
-        # Update weights
-        for i in range(len(self.weights)):
-            layer = np.atleast_2d(self.layers[i])
-            delta = np.atleast_2d(deltas[i])
-            dw = np.dot(layer.T,delta)
-            self.weights[i] += lrate*dw + momentum*self.dw[i]
-            self.dw[i] = dw
+        # Backpropagate errors
+        for i in range(self.num_layers - 2, 0, -1):
+            deltas[i-1] = np.dot(deltas[i], self.weights[i].T) * sigmoid_derivative(activations[i])
 
-        # Return error
-        return (error**2).sum()
+        # Update weights and biases
+        for i in range(self.num_layers - 1):
+            self.weights[i] += learning_rate * np.dot(activations[i].T, deltas[i])
+            self.biases[i] += learning_rate * np.sum(deltas[i], axis=0)
 
+    def train(self, training_data, epochs=1000, learning_rate=0.1):
+        ''' Train the Jordan network '''
 
-# -----------------------------------------------------------------------------
+        for epoch in range(epochs):
+            for input_data, target in training_data:
+                self.backpropagate(input_data, target, learning_rate)
+
+            if epoch % 100 == 0:
+                print(f'Epoch {epoch}: Loss {self.compute_loss(training_data)}')
+
+    def compute_loss(self, training_data):
+        ''' Compute total loss on the training data '''
+
+        total_loss = 0
+        for input_data, target in training_data:
+            activations = self.feedforward(input_data)
+            output_error = target - activations[-1]
+            total_loss += np.sum(output_error ** 2)
+        return total_loss
+
 if __name__ == '__main__':
-    import matplotlib
-    import matplotlib.pyplot as plt
+    # Example: Learning a simple time series
+    training_data = [
+        (np.array([[1, 0, 0, 0]]), np.array([[0, 1, 0, 0]])),
+        (np.array([[0, 1, 0, 0]]), np.array([[0, 0, 1, 0]])),
+        (np.array([[0, 0, 1, 0]]), np.array([[0, 0, 0, 1]])),
+        (np.array([[0, 0, 0, 1]]), np.array([[0, 0, 1, 0]])),
+        (np.array([[0, 0, 1, 0]]), np.array([[0, 1, 0, 0]])),
+        (np.array([[0, 1, 0, 0]]), np.array([[1, 0, 0, 0]]))
+    ]
 
-    # Example 1: learning a simple time serie
-    # -------------------------------------------------------------------------
-    network = Jordan(4,8,4)
-    samples = np.zeros(6, dtype=[('input',  float, 4), ('output', float, 4)])
-    samples[0]  = (1,0,0,0), (0,1,0,0)
-    samples[1]  = (0,1,0,0), (0,0,1,0)
-    samples[2]  = (0,0,1,0), (0,0,0,1)
-    samples[3]  = (0,0,0,1), (0,0,1,0)
-    samples[4]  = (0,0,1,0), (0,1,0,0)
-    samples[5]  = (0,1,0,0), (1,0,0,0)
+    jordan_network = JordanNetwork(4, 8, 4)
+    jordan_network.train(training_data, epochs=5000, learning_rate=0.1)
 
-    for i in range(5000):
-        n = i%samples.size
-        network.propagate_forward(samples['input'][n])
-        network.propagate_backward(samples['output'][n])
-    for i in range(samples.size):
-        o = network.propagate_forward( samples['input'][i] )
-        print 'Sample %d: %s -> %s' % (i, samples['input'][i], samples['output'][i])
-        print '               Network output: %s' % (o == o.max()).astype(float)
-        print 
+    # Test the trained network
+    for input_data, target in training_data:
+        output = jordan_network.feedforward(input_data)[-1]
+        print(f'Input: {input_data}, Target: {target}, Output: {output}')
